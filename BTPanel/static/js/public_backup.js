@@ -463,13 +463,15 @@ var bt =
 
                 //会话失效时自动跳转到登录页面
                 if (typeof (rdata) == 'string') {
-                    if (rdata.indexOf('/static/favicon.ico') != -1 && rdata.indexOf('/static/img/qrCode.png') != -1) {
+                    if ((rdata.indexOf('/static/favicon.ico') != -1 && rdata.indexOf('/static/img/qrCode.png') != -1) || rdata.indexOf('<!DOCTYPE html>') === 0) {
                         window.location.href = "/login"
                         return
                     }
                 }
+                
 				if(callback) callback(rdata);
-            }).error(function () {
+            }).error(function (e, f) {
+                console.log(e,f)
 				if(callback) callback('error');
 			});
 		}
@@ -533,7 +535,7 @@ var bt =
 		
 		layer.msg(msg,btnObj);	
 	},
-	confirm : function(config,callback){
+	confirm : function(config,callback,callback1){
 		var btnObj =  {						
 			title:config.title?config.title:false,
 			time : config.time?config.time:0,					
@@ -541,10 +543,13 @@ var bt =
 			closeBtn: config.closeBtn?config.closeBtn:2,	
 			scrollbar:true,
 			shade:0.3,
-			icon:3
+			icon:3,
+			cancel: (config.cancel?config.cancel:function(){})
 		};
 		layer.confirm(config.msg, btnObj, function(index){
 		 	if(callback) callback(index);
+		},function(index){
+			if(callback1) callback1(index);
 		});
 	},
 	load : function(msg)  
@@ -776,13 +781,20 @@ var bt =
 	render_form:function(data,callback){
 			if(data){		
 			var bs = '_' + bt.get_random(6);
-			var _form = $("<div data-id='form"+bs+"' class='bt-form bt-form pd20 pb70'></div>");			
+			var _form = $("<div data-id='form"+bs+"' class='bt-form bt-form pd20 pb70 "+ (data.class?data.class:'')  +"'></div>");
 			var _lines = data.list; 
 			var clicks = [];
-			for (var i = 0;i<_lines.length;i++){
-				var rRet = bt.render_form_line(_lines[i],bs);
-				for(var s = 0;s<rRet.clicks.length;s++) clicks.push(rRet.clicks[s]);			
-				_form.append(rRet.html);				
+			for (var i = 0; i < _lines.length; i++)
+            {
+                var _obj = _lines[i]
+                if (_obj.hasOwnProperty("html")) {
+                    _form.append(_obj.html)
+                }
+                else {
+                    var rRet = bt.render_form_line(_obj, bs);
+                    for (var s = 0; s < rRet.clicks.length; s++) clicks.push(rRet.clicks[s]);
+                    _form.append(rRet.html);	
+                }			
 			}
 			
 			var _btn_html = '';
@@ -799,7 +811,8 @@ var bt =
 				area: data.area,
 				title: data.title,
 				closeBtn: 2,
-				content:_form.prop("outerHTML")
+				content:_form.prop("outerHTML"),
+                end: data.end ? data.end : false
 			})				
 			setTimeout(function(){
 				bt.render_clicks(clicks,loadOpen,callback);			
@@ -1302,7 +1315,7 @@ bt.index = {
 				var m = "<input id='data_" + l[h].name + "' data-info='" + l[h].name + " " + l[h].versions[0].version + "' type='checkbox' checked>";
 				for(var b = 0; b < l[h].versions.length; b++) {
 					var d = "";
-					if((l[h].name == "PHP" && (l[h].versions[b].version == "5.4" || l[h].versions[b].version == "54")) || (l[h].name == "MySQL" && l[h].versions[b].version == "5.5") || (l[h].name == "phpMyAdmin" && l[h].versions[b].version == "4.4")) {
+					if((l[h].name == "PHP" && (l[h].versions[b].version == "5.6" || l[h].versions[b].version == "5.6")) || (l[h].name == "MySQL" && l[h].versions[b].version == "5.6") || (l[h].name == "phpMyAdmin" && l[h].versions[b].version == "4.4")) {
 						d = "selected";
 						m = "<input id='data_" + l[h].name + "' data-info='" + l[h].name + " " + l[h].versions[b].version + "' type='checkbox' checked>"
 					}
@@ -1418,7 +1431,11 @@ bt.index = {
 					case "5.7":
 						max = 1500;
 						msg = "2GB";
-						break;
+                        break;
+                    case "8.0":
+                        max = 5000;
+                        msg = "6GB";
+                        break;
 					case "5.6":
 						max = 800;
 						msg = "1GB";
@@ -3192,9 +3209,9 @@ bt.soft = {
 	},
 	php : {
 		get_config:function(version,callback){ //获取禁用函数,扩展列表
-			var loading = bt.load();
+			//var loading = bt.load();
 			bt.send('GetPHPConfig','ajax/GetPHPConfig',{version:version},function(rdata){				
-				loading.close();
+				//loading.close();
 				if(callback) callback(rdata);
 			})
 		},
@@ -3758,9 +3775,9 @@ bt.soft = {
 				if(pluginName) qlen = qlen-1;
 				//折扣列表
 				for(var i=0;i<qlen;i++){
-					var j = qarr[i];
-					var a = rdata[j].price;
-					var b = rdata[j].sprice;
+                    var j = qarr[i];
+                    var a = rdata[j].price.toFixed(2);
+                    var b = rdata[j].sprice.toFixed(2);
 					var c = rdata[j].discount;
 					coucon +='<li class="pay-cycle-btn" onclick="bt.soft.get_rscode('+pid+','+a+','+b+','+j+')"><span>'+bt.soft.pro.conver_unit(j)+'</span>'+(c==1?"":'<em>'+c*10+'折</em>')+'</li>';
 				}
@@ -3795,10 +3812,17 @@ bt.soft = {
 		if(type == undefined) type = 0;
 		if(search == undefined) search = '';
 		var force = bt.get_cookie('force');
-		if(force == undefined) force = 0;
-		var loading = bt.load(lan.public.the,1);
-		bt.send('get_soft_list','plugin/get_soft_list',{p:p,type:type,tojs:'soft.get_list',force:force,query:search},function(rdata){
-			loading.close();
+        if (force == undefined) force = 0;
+        p = p + ''
+        if (p.indexOf('not_load') == -1) {
+            var loading = bt.load(lan.public.the, 1);
+        } else {
+            var loading = null;
+            p = p.split("not_load")[0];
+        }
+		
+        bt.send('get_soft_list', 'plugin/get_soft_list', { p: p, type: type, tojs: 'soft.get_list', force: force, query: search }, function (rdata) {
+            if (loading) loading.close();
 			bt.set_cookie('force',0);
 			if(callback) callback(rdata);
 		})
@@ -3903,24 +3927,60 @@ bt.soft = {
 				_this.install_soft(rdata,rdata.versions[0].m_version);
 			}
 		})	
-	},	
+	},
+	//显示进度
+	show_speed: function () {
+		bt.send('get_lines','ajax/get_lines',{ 
+			num: 10, 
+			filename: "/tmp/panelShell.pl" 
+		},function(rdata){
+			if ($("#install_show").length < 1) return;
+			if (rdata.status === true) {
+				$("#install_show").text(rdata.msg);
+				$("#install_show").scrollTop(1000000000);
+			}
+			setTimeout(function () { bt.soft.show_speed(); }, 1000);
+		});
+	},
+	loadT:null,
+	speed_msg:"<pre style='margin-bottom: 0px;height:250px;text-align: left;background-color: #000;color: #fff;white-space: pre-wrap;' id='install_show'>[MSG]</pre>",
+	//显示进度窗口
+	show_speed_window: function(msg,callback){
+		bt.soft.loadT = layer.open({
+			title: false,
+			type:1,
+			closeBtn:0,
+			shade: 0.3,
+			area: "500px",
+			offset: "30%",
+			content: bt.soft.speed_msg.replace('[MSG]',msg),
+			success:function(layers,index){
+				setTimeout(function(){
+					bt.soft.show_speed();
+				},1000);
+				if (callback) callback();
+			}
+		});
+	},
     install_soft: function (item, version, type) { //安装单版本	
         if (type == undefined) type = 0;
 		item.title = bt.replace_all(item.title,'-' + version,'');
 		var msg = item.type!=5?lan.soft.lib_insatll_confirm.replace('{1}',item.title):lan.get('install_confirm',[item.title,version]);
 
 		bt.confirm({msg:msg,title:item.type!=5?lan.soft.lib_install:lan.soft.install_title}, function() {
-            var loadT = bt.load(lan.soft.lib_install_the);
-            bt.send('install_plugin', 'plugin/install_plugin', { sName: item.name, version: version, type: type }, function (rdata) {
+			bt.soft.show_speed_window(lan.soft.lib_install_the,function(){
+				bt.send('install_plugin', 'plugin/install_plugin', { sName: item.name, version: version, type: type }, function (rdata) {
 
-                if (rdata.size) {
-                    _this.install_other(rdata)
-                    return;
-                }
-				loadT.close();		
-				bt.pub.get_task_count();
-				if(soft) soft.get_list();
-				bt.msg(rdata);
+					if (rdata.size) {
+						layer.close(bt.soft.loadT);
+						_this.install_other(rdata)
+						return;
+					}
+					layer.close(bt.soft.loadT);		
+					bt.pub.get_task_count();
+					if(soft) soft.get_list();
+					bt.msg(rdata);
+				})
 			})
 		})
     },
@@ -3955,21 +4015,24 @@ bt.soft = {
                     </div>'
         });
     },
-    update_soft: function (name,title, version, min_version) {
+    update_soft: function (name,title, version, min_version,update_msg) {
         var _this = this;
-		var msg = "<li>建议您在服务器负载闲时进行软件更新.</li>";
+		var msg = "<li style='color:red;'>建议您在服务器负载闲时进行软件更新.</li>";
 		if(name == 'mysql') msg = "<ul style='color:red;'><li>更新数据库有风险,建议在更新前,先备份您的数据库.</li><li>如果您的是云服务器,强烈建议您在更新前做一个快照.</li><li>建议您在服务器负载闲时进行软件更新.</li></ul>";
-        bt.show_confirm('更新[' + title + ']', '更新过程可能会导致服务中断,您真的现在就将[' + title+']更新到['+version+'.'+min_version+']吗?',function(){
-            var loadT = bt.load('正在更新到[' + title+'-'+version+'.'+min_version+'],请稍候...');
-            bt.send('install_plugin', 'plugin/install_plugin', { sName: name, version: version, upgrade: version }, function (rdata) {
-                if (rdata.size) {
-                    _this.install_other(rdata)
-                    return;
-                }
-				loadT.close();				
-				bt.pub.get_task_count();
-				if(soft) soft.get_list();
-				bt.msg(rdata);	
+        if (update_msg) msg += '<div style="    margin-top: 10px;"><span style="font-size: 14px;font-weight: 900;">本次更新说明: </span><hr style="margin-top: 5px; margin-bottom: 5px;" /><pre>' + update_msg.replace(/(_bt_)/g, "\n") +'</pre><hr style="margin-top: -5px; margin-bottom: -5px;" /></div>';
+        bt.show_confirm('更新[' + title + ']', '更新过程可能会导致服务中断,您真的现在就将[' + title + ']更新到[' + version + '.' + min_version + ']吗?', function () {
+			bt.soft.show_speed_window('正在更新到[' + title+'-'+version+'.'+min_version+'],请稍候...',function(){
+				bt.send('install_plugin', 'plugin/install_plugin', { sName: name, version: version, upgrade: version }, function (rdata) {
+					if (rdata.size) {
+						_this.install_other(rdata)
+						return;
+					}
+					layer.close(bt.soft.loadT);	
+					bt.pub.get_task_count();
+					if(soft) soft.get_list();
+					if(rdata.status === true && rdata.msg.indexOf('队列') === -1) rdata.msg = '更新成功!';
+					bt.msg(rdata);	
+				})
 			})
 		},msg);	
 	},
@@ -4601,18 +4664,42 @@ bt.site = {
 	},
 	get_site_ssl:function(siteName,callback){
 		var loadT = bt.load(lan.site.the_msg);
-		bt.send('GetSSL','site/GetSSL',{siteName:siteName},function(rdata){
-			loadT.close();			
-			if(callback) callback(rdata);		
-		})	
+        bt.send('GetSSL', 'site/GetSSL', { siteName: siteName }, function (rdata) {
+            loadT.close();
+            if (callback) callback(rdata);
+        });
 	},
 	create_let:function(data,callback){
-		var loadT = bt.load(lan.site.ssl_apply_2);
-		bt.send('CreateLet','site/CreateLet',data,function(rdata){
-			loadT.close();			
-			if(callback) callback(rdata);		
-		})			
-	},	
+        var loadT = layer.open({
+            title: false,
+            type:1,
+            closeBtn:0,
+            shade: 0.3,
+            area: "500px",
+            offset: "30%",
+            content: "<pre style='margin-bottom: 0px;height:250px;text-align: left;background-color: #000;color: #fff;white-space: pre-wrap;' id='create_lst'>正在准备申请证书...</pre>",
+            success:function(layers,index){
+            	bt.site.get_let_logs();
+            	bt.send('CreateLet', 'site/CreateLet', data, function (rdata) {
+		            layer.close(loadT);
+		            if (callback) callback(rdata);
+		        });
+            }
+        });
+    },
+    get_let_logs: function () {
+    	bt.send('get_lines','ajax/get_lines',{ 
+    		num: 10, 
+    		filename: "/www/server/panel/logs/letsencrypt.log" 
+    	},function(rdata){
+            if ($("#create_lst").text() === "") return;
+            if (rdata.status === true) {
+                $("#create_lst").text(rdata.msg);
+                $("#create_lst").scrollTop($("#create_lst")[0].scrollHeight);
+            }
+            setTimeout(function () { bt.site.get_let_logs(); }, 1000);
+    	});
+    },
 	get_dns_api:function(callback){		
 		var loadT = bt.load();
 		bt.send('GetDnsApi','site/GetDnsApi',{},function(rdata){
@@ -4651,7 +4738,8 @@ bt.site = {
 	set_cert_ssl:function(certName,siteName,callback){
 		var loadT = bt.load('正在部署证书...');
 		bt.send('SetCertToSite','ssl/SetCertToSite',{certName:certName,siteName:siteName},function(rdata){
-			loadT.close();			
+            loadT.close();
+            site.reload();
 			if(callback) callback(rdata);	
 			bt.msg(rdata);
 		})	
@@ -4853,7 +4941,37 @@ bt.site = {
 		bt.send('SetDefaultSite','site/SetDefaultSite',{name:name},function(rdata){
 			loading.close();
 			if(callback) callback(rdata);
-		})		
+		})
+	},
+	get_dir_auth:function(id,callback){
+		var loading = bt.load();
+		bt.send('get_dir_auth','site/get_dir_auth',{id:id},function(rdata){
+			loading.close();
+			if(callback) callback(rdata);
+		})
+	},
+	create_dir_guard:function(data,callback){
+		var loading = bt.load();
+		bt.send('set_dir_auth','site/set_dir_auth',{id:data.id,name:data.name,site_dir:data.site_dir,username:data.username,password:data.password},function(rdata){
+			loading.close();
+			if(callback) callback(rdata);
+		})
+	},
+	edit_dir_account:function(data,callback){
+		var loading = bt.load();
+		bt.send('modify_dir_auth_pass','site/modify_dir_auth_pass',{id:data.id,name:data.name,username:data.username,password:data.password},function(rdata){
+			loading.close();
+			if(callback) callback(rdata);
+		})
+	},
+	delete_dir_guard:function(id,data,callback){
+		var loading = bt.load();
+		bt.show_confirm('删除['+ data +']',"你确定要删除目录保护吗",function(){
+			bt.send('delete_dir_auth','site/delete_dir_auth',{id:id,name:data},function(rdata){
+				loading.close();
+				if(callback) callback(rdata);
+			})
+		})
 	}
 }
 
@@ -4878,7 +4996,7 @@ bt.form ={
 		data_access:{ title:'访问权限',items:[
 					{name:'dataAccess',type:'select',width:'100px',items:[
 					{title:'本地服务器',value:'127.0.0.1'},
-					{title:'所有人',value:'%'},
+					{title:'所有人(不安全)',value:'%'},
 					{title:'指定IP',value:'ip'}
 				],callback:function(obj){
 					var subid = obj.attr('name')+'_subid';

@@ -70,11 +70,12 @@ class plugin_deployment:
     def get_icon(self,pinfo):
         path = '/www/server/panel/BTPanel/static/img/dep_ico'
         if not os.path.exists(path): os.makedirs(path,384)
-        filename = path + '/' + pinfo['name'] + '.png'
+        filename = "%s/%s.png" %  (path, pinfo['name'])
         m_uri = pinfo['min_image']
-        pinfo['min_image'] = '/static/img/dep_ico/' + pinfo['name'] + '.png'
+        pinfo['min_image'] = '/static/img/dep_ico/%s.png' % pinfo['name']
+        if sys.version_info[0] == 2: filename = filename.encode('utf-8')
         if os.path.exists(filename): 
-            if os.path.getsize(filename) > 1024: return pinfo
+            if os.path.getsize(filename) > 100: return pinfo
         os.system("wget -O " + filename + ' http://www.bt.cn' + m_uri + " &")
         return pinfo
     
@@ -242,10 +243,11 @@ class plugin_deployment:
         site_name = get.site_name;
         php_version = get.php_version;
         #取基础信息
-        find = public.M('sites').where('name=?',(site_name,)).field('id,path,name').find();
-        path = find['path'];
+        find = public.M('sites').where('name=?',(site_name,)).field('id,path,name').find()
+        if not  'path' in find:
+            return public.returnMsg(False, '网站不存在!')
+        path = find['path']
         if path.replace('//','/') == '/': return public.returnMsg(False,'危险的网站根目录!')
-        
         #获取包信息
         pinfo = self.GetPackageInfo(name);
         id = pinfo['id']
@@ -285,7 +287,7 @@ class plugin_deployment:
         self.WriteLogs(json.dumps({'name':'安装必要的PHP扩展','total':0,'used':0,'pre':0,'speed':0}));
         import files
         mfile = files.files();
-        if type(pinfo['php_ext']) == str : pinfo['php_ext'] = pinfo['php_ext'].strip().split(',')
+        if type(pinfo['php_ext']) != list : pinfo['php_ext'] = pinfo['php_ext'].strip().split(',')
         for ext in pinfo['php_ext']:
             if ext == 'pathinfo': 
                 import config
@@ -346,6 +348,13 @@ class plugin_deployment:
             rewriteConf = public.readFile(swfile);
             dwfile = self.__panelPath + '/vhost/rewrite/' + site_name + '.conf';
             public.writeFile(dwfile,rewriteConf);
+
+        swfile = path + '/.htaccess';
+        if os.path.exists(swfile):
+            swpath = (path + '/'+ pinfo['run_path'] + '/.htaccess').replace('//','/')
+            if pinfo['run_path'] != '/' and not os.path.exists(swpath):
+                public.writeFile(swpath, public.readFile(swfile))
+
                 
         #删除伪静态文件
         public.ExecShell("rm -f " + path + '/*.rewrite')
@@ -384,7 +393,9 @@ class plugin_deployment:
         #清理文件和目录
         self.WriteLogs(json.dumps({'name':'清理多余的文件','total':0,'used':0,'pre':0,'speed':0}));
         if type(pinfo['remove_file']) == str : pinfo['remove_file'] = pinfo['remove_file'].strip().split(',')
+        print(pinfo['remove_file'])
         for f_path in pinfo['remove_file']:
+            if not f_path: continue
             filename = (path + '/' + f_path).replace('//','/')
             if os.path.exists(filename):
                 if not os.path.isdir(filename):
@@ -428,10 +439,28 @@ class plugin_deployment:
                 os.remove(p_info)
                 i_ndex_html = path + '/index.html'
                 if os.path.exists(i_ndex_html): os.remove(i_ndex_html)
-                public.ExecShell("\cp -a -r " + p_tmp + '/* ' + path + '/')
+                if not self.copy_to(p_tmp,path): os.system(("\cp -arf " + p_tmp + '/. ' + path + '/').replace('//','/'))
             except: pass
-        public.ExecShell("rm -rf " + self.__tmp + '/*')
+        os.system("rm -rf " + self.__tmp + '/*')
         return p_config
+
+
+    def copy_to(self,src,dst):
+        try:
+            if src[-1] == '/': src = src[:-1]
+            if dst[-1] == '/': dst = dst[:-1]
+            if not os.path.exists(src): return False
+            if not os.path.exists(dst): os.makedirs(dst)
+            import shutil
+            for p_name in os.listdir(src):
+                f_src = src + '/' + p_name
+                f_dst = dst + '/' + p_name
+                if os.path.isdir(f_src):
+                    print(shutil.copytree(f_src,f_dst))
+                else:
+                    print(shutil.copyfile(f_src,f_dst))
+            return True
+        except: return False
                 
     
     #提交安装统计
